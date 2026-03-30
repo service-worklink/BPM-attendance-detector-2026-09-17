@@ -207,28 +207,48 @@
         return mse;
     }
 
-    function renderResults(data) {
-        const tbody = document.querySelector('#resultTable tbody');
-        if (data.length === 0) {
-            tbody.innerHTML = "<tr><td colspan='5' style='text-align:center; color:green;'>✅ 鑑測完成：未發現任何異常。</td></tr>";
-            return;
-        }
-
-        tbody.innerHTML = "";
-        data.sort((a, b) => b.score - a.score); // 按嚴重程度排序
-        data.forEach(item => {
-            const tr = document.createElement('tr');
-            tr.className = "anomaly-row";
-            tr.innerHTML = `
-                <td>${item.type}</td>
-                <td>${item.id}</td>
-                <td>${item.d1}</td>
-                <td>${item.d2}</td>
-                <td>${item.score.toFixed(6)}</td>
-            `;
-            tbody.appendChild(tr);
-        });
+    ffunction renderResults(data) {
+    const tbody = document.querySelector('#resultTable tbody');
+    if (data.length === 0) {
+        tbody.innerHTML = "<tr><td colspan='5' style='text-align:center; color:green;'>✅ 鑑測完成：未發現任何異常。</td></tr>";
+        return;
     }
+
+    // 💡 新增：將 Excel 數值或日期物件轉為漂亮字串的工具
+    const formatDateDisplay = (val) => {
+        let d;
+        if (typeof val === 'number') {
+            // Excel 數值轉 JS Date
+            d = new Date(Math.round((val - 25569) * 86400 * 1000));
+        } else {
+            d = new Date(val);
+        }
+        
+        if (isNaN(d.getTime())) return val; // 如果還是轉不動，傳回原值
+
+        const Y = d.getFullYear();
+        const M = String(d.getMonth() + 1).padStart(2, '0');
+        const D = String(d.getDate()).padStart(2, '0');
+        const hh = String(d.getHours()).padStart(2, '0');
+        const mm = String(d.getMinutes()).padStart(2, '0');
+        const ss = String(d.getSeconds()).padStart(2, '0');
+        return `${Y}/${M}/${D} ${hh}:${mm}:${ss}`;
+    };
+
+    tbody.innerHTML = "";
+    data.sort((a, b) => b.score - a.score);
+    
+    data.forEach(item => {
+        const tr = document.createElement('tr');
+        tr.className = "anomaly-row";
+        tr.innerHTML = `
+            <td>${item.type}</td>
+            <td>${item.id}</td>
+            <td>${formatDateDisplay(item.d1)}</td> <td>${formatDateDisplay(item.d2)}</td> <td>${item.score.toFixed(6)}</td>
+        `;
+        tbody.appendChild(tr);
+    });
+}
 </script>
 
 </body>
