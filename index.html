@@ -12,7 +12,6 @@
         .card { border: 1px solid #e0e0e0; border-radius: 8px; padding: 20px; margin-bottom: 20px; }
         .card-title { font-weight: bold; margin-bottom: 15px; font-size: 1.1em; color: #555; }
         
-        /* 按鈕樣式 */
         .btn { padding: 10px 24px; border-radius: 6px; cursor: pointer; font-size: 16px; border: none; transition: 0.3s; margin-right: 10px; }
         .btn-primary { background-color: #1a73e8; color: white; }
         .btn-primary:hover { background-color: #1557b0; }
@@ -23,14 +22,11 @@
         .status-tag { padding: 5px 12px; border-radius: 20px; font-size: 0.85em; background: #eee; font-weight: bold; }
         .ready { background: #e6f4ea; color: #1e8e3e; }
 
-        /* 滑桿 */
         .slider-group { display: flex; align-items: center; gap: 15px; margin: 15px 0; }
         input[type=range] { flex-grow: 1; }
 
-        /* 上傳區 */
         #upload-area { border: 2px dashed #1a73e8; padding: 30px; text-align: center; color: #1a73e8; border-radius: 8px; cursor: pointer; background: #f8fbff; margin-bottom: 10px; }
         
-        /* 表格 */
         table { width: 100%; border-collapse: collapse; margin-top: 20px; }
         th { background-color: #f8f9fa; padding: 12px; border-bottom: 2px solid #dee2e6; text-align: left; }
         td { padding: 12px; border-bottom: 1px solid #eee; }
@@ -152,12 +148,11 @@
         const tbody = document.querySelector('#resultTable tbody');
         tbody.innerHTML = "<tr><td colspan='5' style='text-align:center;'>分析中，請稍候...</td></tr>";
 
-        setTimeout(() => { // 給予瀏覽器渲染時間
+        setTimeout(() => {
             const results = [];
             
             workbookData.SheetNames.forEach(name => {
                 const sheet = workbookData.Sheets[name];
-                // 使用 range: 2 跳過標題，或視需求調整
                 const rows = XLSX.utils.sheet_to_json(sheet, { range: 2 });
 
                 rows.forEach(row => {
@@ -193,7 +188,6 @@
         const d2 = toDate(finishVal);
         if (isNaN(d1.getTime()) || isNaN(d2.getTime())) return 0;
 
-        // 特徵處理 (需與訓練時完全相同)
         const h = d1.getHours() / 24;
         const w = d1.getDay() / 7;
         const dur = Math.min(((d2 - d1) / 60000) / 1440, 1.0);
@@ -207,48 +201,49 @@
         return mse;
     }
 
-    ffunction renderResults(data) {
-    const tbody = document.querySelector('#resultTable tbody');
-    if (data.length === 0) {
-        tbody.innerHTML = "<tr><td colspan='5' style='text-align:center; color:green;'>✅ 鑑測完成：未發現任何異常。</td></tr>";
-        return;
-    }
-
-    // 新增：將 Excel 數值或日期物件轉為漂亮字串的工具
-    const formatDateDisplay = (val) => {
-        let d;
-        if (typeof val === 'number') {
-            // Excel 數值轉 JS Date
-            d = new Date(Math.round((val - 25569) * 86400 * 1000));
-        } else {
-            d = new Date(val);
+    // 💡 已修正：移除重複的 'f'
+    function renderResults(data) {
+        const tbody = document.querySelector('#resultTable tbody');
+        if (data.length === 0) {
+            tbody.innerHTML = "<tr><td colspan='5' style='text-align:center; color:green;'>✅ 鑑測完成：未發現任何異常。</td></tr>";
+            return;
         }
+
+        const formatDateDisplay = (val) => {
+            let d;
+            if (typeof val === 'number') {
+                d = new Date(Math.round((val - 25569) * 86400 * 1000));
+            } else {
+                d = new Date(val);
+            }
+            
+            if (isNaN(d.getTime())) return val;
+
+            const Y = d.getFullYear();
+            const M = String(d.getMonth() + 1).padStart(2, '0');
+            const D = String(d.getDate()).padStart(2, '0');
+            const hh = String(d.getHours()).padStart(2, '0');
+            const mm = String(d.getMinutes()).padStart(2, '0');
+            const ss = String(d.getSeconds()).padStart(2, '0');
+            return `${Y}/${M}/${D} ${hh}:${mm}:${ss}`;
+        };
+
+        tbody.innerHTML = "";
+        data.sort((a, b) => b.score - a.score);
         
-        if (isNaN(d.getTime())) return val; // 如果還是轉不動，傳回原值
-
-        const Y = d.getFullYear();
-        const M = String(d.getMonth() + 1).padStart(2, '0');
-        const D = String(d.getDate()).padStart(2, '0');
-        const hh = String(d.getHours()).padStart(2, '0');
-        const mm = String(d.getMinutes()).padStart(2, '0');
-        const ss = String(d.getSeconds()).padStart(2, '0');
-        return `${Y}/${M}/${D} ${hh}:${mm}:${ss}`;
-    };
-
-    tbody.innerHTML = "";
-    data.sort((a, b) => b.score - a.score);
-    
-    data.forEach(item => {
-        const tr = document.createElement('tr');
-        tr.className = "anomaly-row";
-        tr.innerHTML = `
-            <td>${item.type}</td>
-            <td>${item.id}</td>
-            <td>${formatDateDisplay(item.d1)}</td> <td>${formatDateDisplay(item.d2)}</td> <td>${item.score.toFixed(6)}</td>
-        `;
-        tbody.appendChild(tr);
-    });
-}
+        data.forEach(item => {
+            const tr = document.createElement('tr');
+            tr.className = "anomaly-row";
+            tr.innerHTML = `
+                <td>${item.type}</td>
+                <td>${item.id}</td>
+                <td>${formatDateDisplay(item.d1)}</td>
+                <td>${formatDateDisplay(item.d2)}</td>
+                <td>${item.score.toFixed(6)}</td>
+            `;
+            tbody.appendChild(tr);
+        });
+    }
 </script>
 
 </body>
