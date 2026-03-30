@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <title>BPM 異常簽核行為偵測系統</title>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@latest/dist/xlsx.full.min.js"></script>
+    <style>
+        body { font-family: sans-serif; line-height: 1.6; padding: 20px; background-color: #f4f7f6; }
+        .container { max-width: 1000px; margin: auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        .section { margin-bottom: 25px; padding: 15px; border: 1px solid #ddd; border-radius: 5px; }
+        h2 { color: #2c3e50; margin-top: 0; }
+        button { padding: 10px 20px; cursor: pointer; background-color: #3498db; color: white; border: none; border-radius: 4px; }
+        button:disabled { background-color: #bdc3c7; }
+        #drop-zone { border: 2px dashed #3498db; padding: 30px; text-align: center; color: #3498db; cursor: pointer; margin-top: 10px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        th, td { border: 1px solid #ddd; padding: 10px; text-align: left; font-size: 14px; }
+        th { background-color: #f8f9fa; }
+        tr.anomaly { background-color: #fff5f5; color: #e74c3c; font-weight: bold; }
+        .slider-container { display: flex; align-items: center; gap: 15px; }
+        .status { font-weight: bold; margin-left: 10px; }
+        .success { color: #27ae60; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>BPM 簽核特徵辨識系統</h1>
+
+    <div class="section">
+        <h2>1. 模型初始化</h2>
+        <button id="loadModelBtn">載入 AI 模型 (JSON)</button>
+        <span id="modelStatus" class="status">尚未載入</span>
+    </div>
+
+    <div class="section">
+        <h2>2. 靈敏度設定 (MSE Threshold)</h2>
+        <div class="slider-container">
+            <input type="range" id="thresholdSlider" min="0.01" max="1.0" step="0.01" value="0.1">
+            <span id="thresholdValue">0.10</span>
+            <small>(MSE 超過此值將被標記為異常)</small>
+        </div>
+    </div>
+
+    <div class="section">
+        <h2>3. 上傳待鑑別 Excel 檔案 (.xlsx)</h2>
+        <div id="drop-zone">點擊或拖曳 Excel 檔案至此處</div>
+        <input type="file" id="fileInput" accept=".xlsx, .xls" style="display:none">
+    </div>
+
+    <div class="section">
+        <h2>4. 異常結果分析報告</h2>
+        <table id="resultTable">
+            <thead>
+                <tr>
+                    <th>表單類型</th>
+                    <th>表單編號</th>
+                    <th>申請日期</th>
+                    <th>上次簽核日期</th>
+                    <th>申請流程</th>
+                    <th>異常分數 (MSE)</th>
+                </tr>
+            </thead>
+            <tbody>
+                </tbody>
+        </table>
+    </div>
+</div>
+
+<script>
+    let model;
+    let currentThreshold = 0.1;
+
+    // 更新滑桿數值
+    document.getElementById('thresholdSlider').addEventListener('input', (e) => {
+        currentThreshold = parseFloat(e.target.value);
+        document.getElementById('thresholdValue').innerText = currentThreshold.toFixed(2);
+    });
+
+    // 1. 載入模型邏輯
+    document.getElementById('loadModelBtn').addEventListener('click', async () => {
+        try {
+            const btn = document.getElementById('loadModelBtn');
+            const status = document.getElementById('modelStatus');
+            
+            // 讀取 Topology 與 Weights
+            const topologyRes = await fetch('./bpm_model_topology.json');
+            const weightsRes = await fetch('./bpm_model_weights.json');
+            
+            const topology = await topologyRes.json();
+            const weightsManifest = await weightsRes.json();
+            const weightData = Uint8Array.from(atob(weightsManifest.weightData), c => c.charCodeAt(0)).buffer;
+
+            model = await tf.loadLayersModel(tf.io.fromMemory(
+                topology,
+                weightsManifest.weightSpecs,
+                weightData
+            ));
+
+            status.innerText = "已完成模型載入";
+            status.className = "status success";
+            btn.innerText = "模型已就緒";
+            btn.disabled = true;
+        } catch (err) {
+            alert("載入失敗，請確認檔案路徑是否正確 (需要執行 Local Server)");
+            console.error(err);
+        }
+    });
+
+    // 2. 檔案處理邏輯
+    const dropZone = document.getElementById('drop-zone');
+    const fileInput = document.getElementById('fileInput');
+
+    dropZone.onclick = () => fileInput.click();
+
+    fileInput.onchange = (e) => {
+        const file = e.target.files[0];
+        if (file) processExcel(file);
+    };
+
+    function processExcel(file) {
+        if (!model) { alert("請先載入模型！"); return; }
+        
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            const data = new Uint8Array(e.target.result);
+            const workbook = XLSX.read(data, { type: 'array' });
+            const resultsBody = document.querySelector('#resultTable tbody');
+            resultsBody.innerHTML = ""; // 清空舊結果
+
+            workbook.SheetNames.forEach(sheetName => {
+                const sheet = workbook.Sheets[sheetName];
+                const json = XLSX.utils.sheet_to_json(sheet);
+
+                json.forEach(row => {
+                    // 根據 Excel 欄位名稱對應 (請確認欄位名稱一致)
+                    const applyStr = row['申請日期'];
+                    const finishStr = row['上次簽核日期'];
+                    
+                    if (applyStr && finishStr) {
+                        const score = detectAnomaly(applyStr, finishStr);
+                        
+                        // 判定是否異常 (若 MSE 高於門檻值)
+                        if (score >= currentThreshold) {
+                            const tr = document.createElement('tr');
+                            tr.className = "anomaly";
+                            tr.innerHTML = `
+                                <td>${sheetName}</td>
+                                <td>${row['表單編號'] || '-'}</td>
+                                <td>${applyStr}</td>
+                                <td>${finishStr}</td>
+                                <td>${row['申請流程'] || '-'}</td>
+                                <td>${score.toFixed(6)}</td>
+                            `;
+                            resultsBody.appendChild(tr);
+                        }
+                    }
+                });
+            });
+            if(resultsBody.innerHTML === "") {
+                resultsBody.innerHTML = "<tr><td colspan='6' style='text-align:center'>未偵測到明顯異常。</td></tr>";
+            }
+        };
+        reader.readAsArrayBuffer(file);
+    }
+
+    // 3. 異常偵測運算
+    function detectAnomaly(applyStr, finishStr) {
+        const applyDate = new Date(applyStr);
+        const finishDate = new Date(finishStr);
+
+        const hour = applyDate.getHours();
+        const dayOfWeek = applyDate.getDay();
+        const durationMin = (finishDate - applyDate) / (1000 * 60);
+
+        // 特徵處理 (需與訓練時一致)
+        const features = [
+            hour / 24,
+            dayOfWeek / 7,
+            Math.min(durationMin / 1440, 1.0)
+        ];
+
+        const inputTensor = tf.tensor2d([features]);
+        const prediction = model.predict(inputTensor);
+        
+        // 計算 MSE
+        const mse = tf.losses.meanSquaredError(inputTensor, prediction).dataSync()[0];
+        
+        // 釋放記憶體
+        inputTensor.dispose();
+        prediction.dispose();
+        
+        return mse;
+    }
+</script>
+
+</body>
+</html>
