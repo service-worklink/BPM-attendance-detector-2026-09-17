@@ -136,6 +136,14 @@
                     // 根據 Excel 欄位名稱對應 (請確認欄位名稱一致)
                     const applyStr = row['申請日期'];
                     const finishStr = row['上次簽核日期'];
+
+                    // 檢查欄位是否為空
+                  if (!applyStr || !finishStr) {
+                  console.warn("警告：抓不到日期欄位！請檢查 Excel 標頭是否正確。當前抓取值:", {
+                  applyStr: applyStr,
+                  finishStr: finishStr
+                  });
+                  }
                     
                     if (applyStr && finishStr) {
                         const score = detectAnomaly(applyStr, finishStr);
